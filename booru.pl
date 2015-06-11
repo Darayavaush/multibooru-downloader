@@ -12,6 +12,7 @@
  
 # Parameters that you (yes, YOU) can modify.
 
+my @blacklist = ("tag1","tag2"); #input tags as strings separated by commas 
 my $tag_override = ""; #intended to be used only when trying to pass Unicode as input (for example, when using Pixiv tags that contain non-latin symbols (aka all of them)); I failed to get Unicode to read from ARGV properly. :(
 
 # Below this line begins the script.
