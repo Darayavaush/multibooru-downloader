@@ -1,17 +1,17 @@
 ﻿#!/usr/bin/perl
 
-# Made by Anonymous; modified by Dariush to work with Danbooru 2
+# Made by Anonymous; modified by Dariush to work with Danbooru 2, additions by rayanamukami
 # v.2.1.0 - added blacklist, fixed downloading of tags with over 200 images, generally cleaned up;
 # v.2.2.0 - added Gelbooru support, made everything extensible for support for more sites later;
 # v.2.3.0 - added Pixiv support, added blacklist addition from the command line, revamped the code, added automatic subdirectory creation, remade the way Sigint works, unified tag and pool downloads (note that pools aren't explicitly supported right now, but you can still grab them by searching for "pool:XXXX" as tag);
 # v.2.4.0 - changed argument handling so that quotes are no longer required, added folder and file naming schemes; blacklist now supports multi-tag combinations;
 # v.2.4.1 - added Pixiv tag downloads. Unfortunately, if they contain Japanese characters, they have to be entered in the parameter section of the script itself, since commandline doesn't pass Unicode to Perl properly;
-# v.2.4.2 - added DeviantArt support. No other changes;
+# v.2.4.2 - added DeviantArt support;
+# v.2.4.3 - rayanamukami added Yandere and Konachan support;
 # You may contact me via PM on Danbooru or at archsinus@gmail.com
  
 # Parameters that you (yes, YOU) can modify.
 
-my @blacklist = ("amputee","scat","comic monochrome","doll_joints","puru-see","yaoi","duplicate"); #input tags as strings separated by commas 
 my $tag_override = ""; #intended to be used only when trying to pass Unicode as input (for example, when using Pixiv tags that contain non-latin symbols (aka all of them)); I failed to get Unicode to read from ARGV properly. :(
 
 # Below this line begins the script.
@@ -81,6 +81,8 @@ $threads = $input{"-x"} 					if (exists $input{"-x"});
 $directory =~ s/\/|\\$//;
 my %url_base = (
 		dant => "http://danbooru.donmai.us/post/index.xml",
+		yant => "http://yande.re/post/index.xml",
+		kont => "http://konachan.com/post/index.xml",
 		gel  => "http://gelbooru.com/index.php?page=dapi&s=post&q=index",
 		pixi => "http://www.pixiv.net/member_illust.php",
 		pixt => "http://www.pixiv.net/search.php",
@@ -103,7 +105,7 @@ $url = authorize($url);
 my @files :shared;
 
 die "Non-unique subdirectory name" if (
-	(($site =~ 'dan' or $site eq 'gel')
+	(($site =~ 'dan' or $site eq 'gel' or $site eq 'yan' or $site eq 'kon')
 		and $subdir !~ /(<orig>)/
 		and $subdir !~ /(<booru_name>)/)
 	or  ($site eq 'pixi'
@@ -177,7 +179,6 @@ sub handle_page
 	{	
 		$subdir =~ s/<orig>/$tags/g;
 		$subdir =~ s/<booru_name>/$tags/g;
-																	
 		return 1 if ($content !~ /<post (.+)\/>/);
 		while ($content =~ /<post (.+)\/>/g)
 		{
@@ -200,6 +201,62 @@ sub handle_page
 				}
 			}
 			push @files, ($site =~ 'dan' ? "http://danbooru.donmai.us".$hash->{file_url}:$hash->{file_url}) unless $hash->{blacklisted};
+		}
+	}
+	if ($site =~ 'kon')
+	{	
+		$subdir =~ s/<orig>/$tags/g;
+		$subdir =~ s/<booru_name>/$tags/g;
+		return 1 if ($content !~ /<post (.+)\/>/);
+		while ($content =~ /<post (.+)\/>/g)
+		{
+			my $hash = hashXML($1);
+			foreach (@blacklist)
+			{
+				my @sep_black = split(' ',$_); #separate components of multi-tag blacklisted combinations
+				my $black_counter = 0;
+				foreach (@sep_black)
+				{
+					if ($hash->{tags} =~ /$_/)
+					{
+						$black_counter += 1;
+					}
+				}
+				if ($black_counter >= 0+@sep_black) #only blacklist the whole post if it matches every tag in the space-separated combination
+				{
+					$hash->{blacklisted} = 1;
+					last;
+				}
+			}
+			push @files, ($site =~ 'kon' ? "".$hash->{file_url}:$hash->{file_url}) unless $hash->{blacklisted};
+		}
+	}
+	if ($site =~ 'yan')
+	{	
+		$subdir =~ s/<orig>/$tags/g;
+		$subdir =~ s/<booru_name>/$tags/g;
+		return 1 if ($content !~ /<post (.+)\/>/);
+		while ($content =~ /<post (.+)\/>/g)
+		{
+			my $hash = hashXML($1);
+			foreach (@blacklist)
+			{
+				my @sep_black = split(' ',$_); #separate components of multi-tag blacklisted combinations
+				my $black_counter = 0;
+				foreach (@sep_black)
+				{
+					if ($hash->{tags} =~ /$_/)
+					{
+						$black_counter += 1;
+					}
+				}
+				if ($black_counter >= 0+@sep_black) #only blacklist the whole post if it matches every tag in the space-separated combination
+				{
+					$hash->{blacklisted} = 1;
+					last;
+				}
+			}
+			push @files, ($site =~ 'yan' ? "".$hash->{file_url}:$hash->{file_url}) unless $hash->{blacklisted};
 		}
 	}
 	if ($site =~ 'pix')
@@ -351,6 +408,8 @@ sub fetch_page
 	my $page = shift;
 	my %local = (
 		dant => "<url>&tags=$tags&page=$page&limit=$limit",
+		kont => "<url>?tags=$tags&page=$page&limit=$limit",
+		yant => "<url>?tags=$tags&page=$page&limit=$limit",
 		gel  => "<url>&tags=$tags&pid=".($page-1)."&limit=$limit",
 		pixi => "<url>?id=$tags&p=$page",
 		pixt => "<url>?s_mode=s_tag_full&word=$tags&p=$page",
@@ -382,6 +441,7 @@ sub save_file
 	my $file_id = $2;
 	my $ext = $3;	
 	$local_name =~ s/<orig>/$file_id/g;
+	$filename =~ s/%20/ /g; #Konachan spaces
 	my $temp_name = $local_name;
 	$temp_name =~ s/(<[^>]+>)//g; #this includes hashes and other options that can only be added after downloading
 	#we do everything that's possible to do with the file without downloading before this line
@@ -419,6 +479,8 @@ Options:
 		-d			directory to save images to (a unique subdirectory based on input will be automatically created) (default `$directory');
 		-s			site to download from (default Danbooru), syntax: 
 			'dant' for Danbooru; 
+			'kont' for Konachan; 
+			'yant' for Yandere; 
 			'gel' for Gelbooru;
 			'pixi' for Pixiv download by ID;
 			'pixt' for Pixiv download by tag; (if using this option, use ".'$tag_override'." option in the parameter section to ensure correct Unicode handling)
