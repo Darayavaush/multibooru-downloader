@@ -8,6 +8,7 @@
 # v.2.4.1 - added Pixiv tag downloads. Unfortunately, if they contain Japanese characters, they have to be entered in the parameter section of the script itself, since commandline doesn't pass Unicode to Perl properly;
 # v.2.4.2 - added DeviantArt support;
 # v.2.4.3 - rayanamukami added Yandere and Konachan support;
+# v.2.4.4 - finally fixed Pixiv downloads;
 # You may contact me via PM on Danbooru or at archsinus@gmail.com
  
 # Parameters that you (yes, YOU) can modify.
@@ -28,6 +29,8 @@ use Digest::SHA1 qw(sha1_hex);
 use URI::Escape;
 use Data::Dumper;
 use Digest::MD5;
+use HTML::TreeBuilder;
+use Win32::Unicode::Dir;
 	
 my $stop = 0;
 $SIG{'INT'} = 'SIGINT_handler'; 
@@ -135,11 +138,11 @@ for(my $page = 1; ; $page++)
 #yay, we have an array of links to files to be downloaded!
 
 if (!-d $directory)
-{	mkdir $directory;} 
+{	mkdirW $directory;} 
 chdir $directory;
 $subdir = proper($subdir);
 if (!-d $subdir)
-{	mkdir $subdir;} 
+{	mkdirW $subdir;} 
 die "Failed to chdir into subdirectory. Please try some other naming scheme." if !chdir $subdir;
 
 my @thr;
@@ -262,7 +265,55 @@ sub handle_page
 	}
 	if ($site =~ 'pix')
 	{	
-		my @links = grep {$_ =~ /illust_id=(\d+)/} map {$_->url} ($mech->links);
+		my $tree = HTML::TreeBuilder->new_from_content($mech->content); 
+		my $artistname = (($tree->look_down(class => 'user'))[0]->content_list)[0];
+		
+		mkdirW 'S:\scripts\danbooru downloader new\\'.$artistname; exit;
+		$subdir =~ s/<orig>/$artistname/g;
+		my $good = 0;
+		foreach my $tr ($tree->look_down(class => '_layout-thumbnail')) 
+		{
+			$good = 1;
+			my $name = $tr->parent->parent->look_down(class => 'title')->attr('title');
+			my $url = ($tr->content_list)[0]->attr('src');
+			$url =~ s/c\/150x150\/img-master/img-original/;
+			$url =~ s/_master1200//;
+			if ($tr->parent->attr('class') !~ 'multiple')
+			{
+				push @files, $url;
+			}
+			else
+			{
+				$mech->get("http://pixiv.net/".$tr->parent->attr('href'));
+				$mech->content =~ / (\d+)P<\/li>/;				
+				my $manga_pages = $1;	
+				for (my $i = 0; $i < $manga_pages; $i++)
+				{
+					push @files, $url;
+					my $j = $i + 1;
+					$url =~ s/_p$i/_p$j/;
+				}				
+			}
+		}		
+		return 1 if (!$good);		
+			$subdir =~ s/<id>/$tags/g;			
+		if ($subdir =~ /<booru_name>/)
+		{
+			$mech->get("http://danbooru.donmai.us/artists.xml?name=http://www.pixiv.net/member.php?id=$tags");
+			if ($mech->content =~ /<name>(\S+)<\/name>/)
+			{
+				my $temp = $1;
+				$subdir =~ s/<booru_name>/$temp/g;
+				$subdir =~ s/<booru_fallback=[^>]+>//g;
+			} else {
+				$subdir =~ s/<booru_name>//g;
+				$subdir =~ s/<booru_fallback=([^>]+)>/$1/g;
+			}	
+		}
+		
+=p
+		my @links = grep {$_->url =~ /illust_id=(\d+)/} ($mech->links);
+		#print Dumper(@links);
 		return 1 if (!@links);
 		foreach (@links)
 		{
@@ -298,20 +349,6 @@ sub handle_page
 					}
 			}
 			#ID and Danbooru name lookup are independent of API, so they are done outside of API-specific blocks
-					$subdir =~ s/<id>/$tags/g;			
-				if ($subdir =~ /<booru_name>/)
-				{
-					$mech->get("http://danbooru.donmai.us/artists.xml?name=http://www.pixiv.net/member.php?id=$tags");
-					if ($mech->content =~ /<name>(\S+)<\/name>/)
-					{
-						my $temp = $1;
-						$subdir =~ s/<booru_name>/$temp/g;
-						$subdir =~ s/<booru_fallback=[^>]+>//g;
-					} else {
-						$subdir =~ s/<booru_name>//g;
-						$subdir =~ s/<booru_fallback=([^>]+)>/$1/g;
-					}	
-				}
 			if ($manga_pages ne '')
 			{
 				$url =~ /(\S+)(\.\w+)$/;
@@ -325,6 +362,7 @@ sub handle_page
 				push @files, $url;
 			}
 		}
+=cut
 	}
 	if ($site eq 'dea')
 	{	
