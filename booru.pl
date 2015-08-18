@@ -267,8 +267,6 @@ sub handle_page
 	{	
 		my $tree = HTML::TreeBuilder->new_from_content($mech->content); 
 		my $artistname = (($tree->look_down(class => 'user'))[0]->content_list)[0];
-		
-		mkdirW 'S:\scripts\danbooru downloader new\\'.$artistname; exit;
 		$subdir =~ s/<orig>/$artistname/g;
 		my $good = 0;
 		foreach my $tr ($tree->look_down(class => '_layout-thumbnail')) 
