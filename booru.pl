@@ -1,4 +1,4 @@
-﻿#!/usr/bin/perl
+#!/usr/bin/perl
 
 # Made by Anonymous; modified by Dariush to work with Danbooru 2, additions by rayanamukami
 # v.2.1.0 - added blacklist, fixed downloading of tags with over 200 images, generally cleaned up;
@@ -13,7 +13,7 @@
  
 # Parameters that you (yes, YOU) can modify.
 
-my @blacklist = ("amputee","scat","comic monochrome","doll_joints","puru-see","duplicate","yaoi"); #input tags as strings separated by commas 
+my @blacklist = ("amputee","scat","comic","doll_joints","puru-see","duplicate", "nude_filter", "what", "katawa_shoujo", "huge_filesize", "full-package_futanari", "furry"); #input tags as strings separated by commas 
 my $tag_override = ""; #intended to be used only when trying to pass Unicode as input (for example, when using Pixiv tags that contain non-latin symbols (aka all of them)); I failed to get Unicode to read from ARGV properly. :(
 
 # Below this line begins the script.
@@ -49,20 +49,20 @@ my $name = "<orig>";#hash title
 	my $exit = 0; #0 is full work, 1 is exit before download
 my $mech = WWW::Mechanize->new();
 $mech -> cookie_jar(HTTP::Cookies->new());
- 
-if (grep { /-help$|^help$|-h/i } @ARGV )
-{
-	show_help();
-	exit;
-}
 
 #data input	
 my $args = join(' ',@ARGV);
-my @strs = split(/(-\S)\b/,$args);
+my @strs = split(/\s(-\S)\b/,$args);
 shift @strs;
 $/ = ' ';
 foreach(@strs)	{	s/^\s+//; chomp;	}
 my %input = @strs;
+ 
+if ($input{"-h"})
+{
+	show_help();
+	exit;
+}
 
 $user = $input{"-u"};
 $pass = $input{"-p"};
@@ -141,6 +141,7 @@ if (!-d $directory)
 {	mkdirW $directory;} 
 chdir $directory;
 $subdir = proper($subdir);
+$subdir =~ s/\<|\>//g;
 if (!-d $subdir)
 {	mkdirW $subdir;} 
 die "Failed to chdir into subdirectory. Please try some other naming scheme." if !chdir $subdir;
@@ -385,6 +386,7 @@ sub handle_page
 			s/#comments//;
 			$mech -> get("http://backend.deviantart.com/oembed?url=$_");
 			my $hash = hashJSON($mech->content);
+			print Dumper($hash);
 			push @files, $hash->{url};
 		}
 	}
@@ -412,6 +414,17 @@ sub authorize
 					},
 				);			
 		die("Authorization failed.\n") if ($mech->content =~ /loggedIn = false/);
+	}
+	if ($site =~ 'dea')
+	{
+		$mech -> get('http://www.deviantart.com/');
+		$mech -> submit_form( 
+					with_fields => {
+						username	=> $user,
+						password		=> $pass,
+					},
+				);			
+		#die("Authorization failed.\n") if ($mech->content =~ /loggedIn = false/);
 	}
 	print "Authorization successful.\n";
 	
